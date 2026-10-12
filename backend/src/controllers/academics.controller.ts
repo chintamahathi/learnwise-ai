@@ -8,6 +8,7 @@ import {
   topicStats,
   subjectStats,
   gapAnalysis,
+  recommendations,
   pickQuestions,
   subjects,
   topicsBySubject,
@@ -118,6 +119,39 @@ export function listGaps(req: Request, res: Response) {
        * Weak  = pct < 60, Revise = 60–74, Strong = 75+ (excluded here)
        */
       calculation: "mean_attempt_pct",
+    },
+  });
+}
+
+// ── GET /api/academics/recommendations ───────────────────────────────────────
+/**
+ * Returns resources from the verified catalogue matched to the student's
+ * actual gap topics (pct < 75 %), ordered weakest-first and by difficulty
+ * within each topic (Easy before Hard).
+ *
+ * All returned resources carry source = "configured" — every URL in the
+ * catalogue was hand-curated.  No AI-generated content is included.
+ *
+ * Optional query params:
+ *   limit   — max resources to return (default 8, max 50)
+ *   status  — "Weak" | "Revise" | "all" (default "all")
+ */
+export function listRecommendations(req: Request, res: Response) {
+  const { status, limit: limitStr } = req.query as Record<string, string | undefined>;
+  const limit = Math.min(Number(limitStr ?? "8") || 8, 50);
+  const statusFilter =
+    status === "Weak" || status === "Revise" ? (status as "Weak" | "Revise") : "all";
+
+  const recs = recommendations(getRecords(), { limit, statusFilter });
+  const gapTopics = new Set(recs.map((r) => r.matchedTopic)).size;
+
+  res.json({
+    data: recs,
+    meta: {
+      gapTopics,
+      total: recs.length,
+      algorithm:
+        "topic_match_weakest_first_difficulty_asc — resources matched to gap topics from the verified catalogue only",
     },
   });
 }

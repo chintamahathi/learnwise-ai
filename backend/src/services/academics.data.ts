@@ -1,7 +1,7 @@
 // Seed data matching the frontend's src/data/academics.ts exactly.
 // Replace with database queries when a DB is connected.
 
-import type { PerfRecord, Resource, Question, TopicStat, SubjectStat, GapAnalysis, GapRecord } from "../models/academics.model.js";
+import type { PerfRecord, Resource, Question, TopicStat, SubjectStat, GapAnalysis, GapRecord, RecommendedResource } from "../models/academics.model.js";
 
 export const subjects = ["DSA", "Operating Systems", "DBMS", "Computer Networks"] as const;
 
@@ -48,20 +48,20 @@ export function deleteRecord(id: number): boolean {
 }
 
 export const resources: Resource[] = [
-  { id: 1,  title: "Linked List visualised",        description: "Step-by-step pointer updates for insert and delete.",      subject: "DSA",               topic: "Linked Lists",       kind: "Video",    difficulty: "Easy",   minutes: 18, url: "https://visualgo.net/en/list" },
-  { id: 2,  title: "Linked list problem set",        description: "Reverse, merge, and detect cycles.",                       subject: "DSA",               topic: "Linked Lists",       kind: "Practice", difficulty: "Medium", minutes: 45, url: "https://leetcode.com/tag/linked-list/" },
-  { id: 3,  title: "DP patterns guide",              description: "How to define states and transitions.",                    subject: "DSA",               topic: "Dynamic Programming",kind: "Tutorial", difficulty: "Hard",   minutes: 40, url: "https://cp-algorithms.com/" },
-  { id: 4,  title: "Array techniques notes",         description: "Two pointers, prefix sums, sliding window.",               subject: "DSA",               topic: "Arrays",             kind: "Notes",    difficulty: "Easy",   minutes: 15, url: "https://www.geeksforgeeks.org/array-data-structure/" },
-  { id: 5,  title: "Tree traversals walkthrough",    description: "Inorder, preorder, level order with examples.",            subject: "DSA",               topic: "Trees",              kind: "Video",    difficulty: "Medium", minutes: 22, url: "https://visualgo.net/en/bst" },
-  { id: 6,  title: "CPU scheduling worked examples", description: "FCFS, SJF, and round robin timelines.",                   subject: "Operating Systems", topic: "Process Scheduling", kind: "Notes",    difficulty: "Medium", minutes: 30, url: "https://www.geeksforgeeks.org/cpu-scheduling-in-operating-systems/" },
-  { id: 7,  title: "Page replacement practice",      description: "FIFO, LRU, and optimal with page-fault counting.",        subject: "Operating Systems", topic: "Memory Management",  kind: "Practice", difficulty: "Medium", minutes: 35, url: "https://www.geeksforgeeks.org/page-replacement-algorithms-in-operating-systems/" },
-  { id: 8,  title: "Deadlock and Banker's algorithm",description: "Safe states explained with tables.",                      subject: "Operating Systems", topic: "Deadlocks",          kind: "Tutorial", difficulty: "Hard",   minutes: 25, url: "https://www.geeksforgeeks.org/bankers-algorithm-in-operating-system-2/" },
-  { id: 9,  title: "SQL joins reference",            description: "Official PostgreSQL join documentation.",                  subject: "DBMS",              topic: "SQL Joins",          kind: "Docs",     difficulty: "Easy",   minutes: 20, url: "https://www.postgresql.org/docs/current/tutorial-join.html" },
-  { id: 10, title: "Normalization in 15 minutes",    description: "1NF to BCNF with one running example.",                   subject: "DBMS",              topic: "Normalization",      kind: "Video",    difficulty: "Medium", minutes: 15, url: "https://www.geeksforgeeks.org/normal-forms-in-dbms/" },
-  { id: 11, title: "Subnetting cheat sheet",         description: "Block sizes, masks, and quick tricks.",                   subject: "Computer Networks", topic: "Subnetting",         kind: "Notes",    difficulty: "Easy",   minutes: 12, url: "https://www.geeksforgeeks.org/introduction-to-subnetting/" },
-  { id: 12, title: "Subnetting drills",              description: "Practice splitting networks into subnets.",                subject: "Computer Networks", topic: "Subnetting",         kind: "Practice", difficulty: "Medium", minutes: 30, url: "https://subnettingpractice.com/" },
-  { id: 13, title: "TCP/IP model overview",          description: "Layers and responsibilities.",                             subject: "Computer Networks", topic: "TCP/IP",             kind: "Notes",    difficulty: "Easy",   minutes: 15, url: "https://www.geeksforgeeks.org/tcp-ip-model/" },
-  { id: 14, title: "ACID transactions explained",    description: "Isolation levels with examples.",                         subject: "DBMS",              topic: "Transactions",       kind: "Tutorial", difficulty: "Medium", minutes: 20, url: "https://www.postgresql.org/docs/current/transaction-iso.html" },
+  { id: 1,  title: "Linked List visualised",         description: "Step-by-step pointer updates for insert and delete.",      subject: "DSA",               topic: "Linked Lists",        kind: "Video",    difficulty: "Easy",   minutes: 18, url: "https://visualgo.net/en/list",                                                              source: "configured" },
+  { id: 2,  title: "Linked list problem set",         description: "Reverse, merge, and detect cycles.",                       subject: "DSA",               topic: "Linked Lists",        kind: "Practice", difficulty: "Medium", minutes: 45, url: "https://leetcode.com/tag/linked-list/",                                                      source: "configured" },
+  { id: 3,  title: "DP patterns guide",               description: "How to define states and transitions.",                    subject: "DSA",               topic: "Dynamic Programming", kind: "Tutorial",  difficulty: "Hard",   minutes: 40, url: "https://cp-algorithms.com/",                                                                 source: "configured" },
+  { id: 4,  title: "Array techniques notes",          description: "Two pointers, prefix sums, sliding window.",               subject: "DSA",               topic: "Arrays",              kind: "Notes",    difficulty: "Easy",   minutes: 15, url: "https://www.geeksforgeeks.org/array-data-structure/",                                        source: "configured" },
+  { id: 5,  title: "Tree traversals walkthrough",     description: "Inorder, preorder, level order with examples.",            subject: "DSA",               topic: "Trees",               kind: "Video",    difficulty: "Medium", minutes: 22, url: "https://visualgo.net/en/bst",                                                                source: "configured" },
+  { id: 6,  title: "CPU scheduling worked examples",  description: "FCFS, SJF, and round robin timelines.",                   subject: "Operating Systems", topic: "Process Scheduling",  kind: "Notes",    difficulty: "Medium", minutes: 30, url: "https://www.geeksforgeeks.org/cpu-scheduling-in-operating-systems/",                         source: "configured" },
+  { id: 7,  title: "Page replacement practice",       description: "FIFO, LRU, and optimal with page-fault counting.",        subject: "Operating Systems", topic: "Memory Management",   kind: "Practice", difficulty: "Medium", minutes: 35, url: "https://www.geeksforgeeks.org/page-replacement-algorithms-in-operating-systems/",            source: "configured" },
+  { id: 8,  title: "Deadlock and Banker's algorithm", description: "Safe states explained with tables.",                      subject: "Operating Systems", topic: "Deadlocks",           kind: "Tutorial",  difficulty: "Hard",   minutes: 25, url: "https://www.geeksforgeeks.org/bankers-algorithm-in-operating-system-2/",                     source: "configured" },
+  { id: 9,  title: "SQL joins reference",             description: "Official PostgreSQL join documentation.",                  subject: "DBMS",              topic: "SQL Joins",           kind: "Docs",     difficulty: "Easy",   minutes: 20, url: "https://www.postgresql.org/docs/current/tutorial-join.html",                                 source: "configured" },
+  { id: 10, title: "Normalization in 15 minutes",     description: "1NF to BCNF with one running example.",                   subject: "DBMS",              topic: "Normalization",       kind: "Video",    difficulty: "Medium", minutes: 15, url: "https://www.geeksforgeeks.org/normal-forms-in-dbms/",                                        source: "configured" },
+  { id: 11, title: "Subnetting cheat sheet",          description: "Block sizes, masks, and quick tricks.",                   subject: "Computer Networks", topic: "Subnetting",          kind: "Notes",    difficulty: "Easy",   minutes: 12, url: "https://www.geeksforgeeks.org/introduction-to-subnetting/",                                  source: "configured" },
+  { id: 12, title: "Subnetting drills",               description: "Practice splitting networks into subnets.",                subject: "Computer Networks", topic: "Subnetting",          kind: "Practice", difficulty: "Medium", minutes: 30, url: "https://subnettingpractice.com/",                                                            source: "configured" },
+  { id: 13, title: "TCP/IP model overview",           description: "Layers and responsibilities.",                             subject: "Computer Networks", topic: "TCP/IP",              kind: "Notes",    difficulty: "Easy",   minutes: 15, url: "https://www.geeksforgeeks.org/tcp-ip-model/",                                                source: "configured" },
+  { id: 14, title: "ACID transactions explained",     description: "Isolation levels with examples.",                         subject: "DBMS",              topic: "Transactions",        kind: "Tutorial",  difficulty: "Medium", minutes: 20, url: "https://www.postgresql.org/docs/current/transaction-iso.html",                               source: "configured" },
 ];
 
 export const questionBank: Question[] = [
@@ -168,6 +168,61 @@ export function gapAnalysis(recs: PerfRecord[]): GapAnalysis[] {
 
   // Sort weakest first so the highest-priority gap is at index 0
   return gaps.sort((a, b) => a.pct - b.pct);
+}
+
+/**
+ * Returns resources from the verified catalogue matched to the student's
+ * actual weak/revise topics.
+ *
+ * Matching algorithm (deterministic, no AI):
+ *   1. Compute gap topics using gapAnalysis(), weakest-first.
+ *   2. Filter by `statusFilter` if provided.
+ *   3. For each gap topic, pull all resources whose topic matches.
+ *   4. Within a topic: order by difficulty (Easy → Medium → Hard) so a
+ *      student who scored poorly sees accessible material first.
+ *   5. Deduplicate by resource id (a resource can only appear once).
+ *   6. Cap at `limit`.
+ *
+ * Every resource in the catalogue carries source = "configured" because
+ * each URL was hand-curated.  No AI-generated content is included.
+ */
+export function recommendations(
+  recs: PerfRecord[],
+  opts: { limit?: number; statusFilter?: "Weak" | "Revise" | "all" } = {},
+): RecommendedResource[] {
+  const { limit = 8, statusFilter = "all" } = opts;
+
+  let gaps = gapAnalysis(recs);
+  if (statusFilter !== "all") {
+    gaps = gaps.filter((g) => g.status === statusFilter);
+  }
+
+  const diffOrder: Record<string, number> = { Easy: 0, Medium: 1, Hard: 2 };
+  const seen = new Set<number>();
+  const result: RecommendedResource[] = [];
+
+  for (const gap of gaps) {
+    if (result.length >= limit) break;
+
+    const topicResources = resources
+      .filter((r) => r.topic === gap.topic)
+      .sort((a, b) => (diffOrder[a.difficulty] ?? 1) - (diffOrder[b.difficulty] ?? 1));
+
+    for (const r of topicResources) {
+      if (result.length >= limit) break;
+      if (seen.has(r.id)) continue;
+      seen.add(r.id);
+      result.push({
+        ...r,
+        source: "configured" as const,
+        matchedTopic: gap.topic,
+        matchedStatus: gap.status,
+        matchedPct: gap.pct,
+      });
+    }
+  }
+
+  return result;
 }
 
 export function pickQuestions(subject: string, topic: string, difficulty: string, count: number): Question[] {

@@ -71,6 +71,12 @@ export interface Resource {
   difficulty: "Easy" | "Medium" | "Hard";
   minutes: number;
   url: string;
+  /**
+   * "configured" = hand-curated URL in the backend resource catalogue.
+   * "generated"  = future AI-produced suggestion (not yet implemented).
+   * Absent on older responses — treat missing as "configured".
+   */
+  source?: "configured" | "generated";
 }
 
 export interface TopicStat {
@@ -234,6 +240,58 @@ export function getResources(params?: {
   if (params?.topic) qs.set("topic", params.topic);
   const query = qs.toString();
   return request<{ data: Resource[] }>(`/api/academics/resources${query ? `?${query}` : ""}`);
+}
+
+// ── Recommendations ───────────────────────────────────────────────────────────
+
+export interface RecommendedResource extends Resource {
+  /** The gap topic this resource was matched to. */
+  matchedTopic: string;
+  /** The gap status that triggered this recommendation. */
+  matchedStatus: "Weak" | "Revise";
+  /** Accuracy percentage of the matched topic (0–100). */
+  matchedPct: number;
+  source: "configured"; // all server-side recommendations come from the verified catalogue
+}
+
+export interface RecommendationsResponse {
+  data: RecommendedResource[];
+  meta: {
+    /** Number of gap topics queried. */
+    gapTopics: number;
+    /** Number of resources found across those topics. */
+    total: number;
+    /**
+     * How matches are selected:
+     * 1. For each gap topic (weakest-first) pull all resources for that topic.
+     * 2. Within each topic: Easy before Medium before Hard (match difficulty to gap severity).
+     * 3. Deduplicate by resource id.
+     * 4. Cap at `limit` (default 8).
+     * All resources come from the verified backend catalogue — no AI generation.
+     */
+    algorithm: string;
+  };
+}
+
+/**
+ * GET /api/academics/recommendations
+ * Returns curated resources matched to the student's actual weak topics.
+ *
+ * Optional params:
+ *   limit  — max resources to return (default 8)
+ *   status — "Weak" | "Revise" | "all" (default "all")
+ */
+export function getRecommendations(params?: {
+  limit?: number;
+  status?: "Weak" | "Revise";
+}): Promise<RecommendationsResponse> {
+  const qs = new URLSearchParams();
+  if (params?.limit != null) qs.set("limit", String(params.limit));
+  if (params?.status) qs.set("status", params.status);
+  const query = qs.toString();
+  return request<RecommendationsResponse>(
+    `/api/academics/recommendations${query ? `?${query}` : ""}`,
+  );
 }
 
 // ── Gaps (learning-gap analysis) ─────────────────────────────────────────────

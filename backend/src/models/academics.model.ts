@@ -25,6 +25,11 @@ export interface Resource {
   difficulty: "Easy" | "Medium" | "Hard";
   minutes: number;
   url: string;
+  /**
+   * "configured" = hand-curated URL in the backend resource catalogue.
+   * "generated"  = future AI-produced suggestion (not yet implemented).
+   */
+  source: "configured" | "generated";
 }
 
 export interface Question {
@@ -96,4 +101,20 @@ export interface GapAnalysis {
    * just a number.
    */
   evidence: GapRecord[];
+}
+
+/**
+ * A resource recommendation entry.
+ * All server-side recommendations come from the verified catalogue
+ * (source = "configured").  A future AI integration would set
+ * source = "generated" and include a disclaimer.
+ */
+export interface RecommendedResource extends Resource {
+  source: "configured";
+  /** The gap topic this resource was matched against. */
+  matchedTopic: string;
+  /** The gap status of the matched topic. */
+  matchedStatus: "Weak" | "Revise";
+  /** Accuracy percentage of the matched topic. */
+  matchedPct: number;
 }
