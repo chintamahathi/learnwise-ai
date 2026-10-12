@@ -54,3 +54,46 @@ export interface SubjectStat {
   pct: number;
   count: number;
 }
+
+/**
+ * A learning-gap entry: one topic whose average accuracy is below the "Strong"
+ * threshold (75 %).  Every contributing record is included so the UI can
+ * surface the exact evidence behind the gap instead of an opaque score.
+ *
+ * Calculation (transparent, no AI):
+ *   pct  = round( mean( score_i / max_i * 100 )  for each attempt i )
+ *   trend = last_attempt_pct − first_attempt_pct  (chronological order)
+ *   status = "Weak" if pct < 60, "Revise" if 60–74
+ *
+ * Records are sorted oldest-first so the trend direction is unambiguous.
+ */
+export interface GapRecord {
+  id: number;
+  date: string;
+  type: RecordType;
+  score: number;
+  max: number;
+  /** Rounded percentage for this single attempt. */
+  attemptPct: number;
+  mistakes: string;
+}
+
+export interface GapAnalysis {
+  subject: string;
+  topic: string;
+  /** Average accuracy across all attempts (0–100). */
+  pct: number;
+  /** Number of recorded attempts for this topic. */
+  attempts: number;
+  /** Last attempt pct minus first attempt pct; positive = improving. */
+  trend: number;
+  /** Deduplicated list of non-empty mistake strings. */
+  mistakes: string[];
+  status: "Weak" | "Revise";
+  /**
+   * The individual records that produced this gap score, sorted
+   * oldest-first.  Lets the frontend show "here is why" rather than
+   * just a number.
+   */
+  evidence: GapRecord[];
+}

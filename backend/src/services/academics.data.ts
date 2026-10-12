@@ -1,7 +1,7 @@
 // Seed data matching the frontend's src/data/academics.ts exactly.
 // Replace with database queries when a DB is connected.
 
-import type { PerfRecord, Resource, Question, TopicStat, SubjectStat } from "../models/academics.model.js";
+import type { PerfRecord, Resource, Question, TopicStat, SubjectStat, GapAnalysis, GapRecord } from "../models/academics.model.js";
 
 export const subjects = ["DSA", "Operating Systems", "DBMS", "Computer Networks"] as const;
 
@@ -116,6 +116,58 @@ export function subjectStats(recs: PerfRecord[]): SubjectStat[] {
       : 0;
     return { subject: s, pct, count: rs.length };
   });
+}
+
+/**
+ * Returns topics whose average accuracy is below the Strong threshold (75 %).
+ *
+ * Calculation — fully deterministic, derived only from stored records:
+ *   1. Group records by (subject, topic).
+ *   2. Sort each group chronologically (oldest first).
+ *   3. pct   = round( mean of per-attempt percentages )
+ *   4. trend = last_attempt_pct − first_attempt_pct
+ *   5. status = "Weak" if pct < 60, "Revise" if 60–74.
+ *   6. Attach the contributing records as `evidence` so callers can audit.
+ *
+ * Topics with no records (pct = 0) are excluded — a topic must have been
+ * attempted at least once to appear as a gap.
+ */
+export function gapAnalysis(recs: PerfRecord[]): GapAnalysis[] {
+  const map = new Map<string, PerfRecord[]>();
+  recs.forEach((r) => {
+    const k = `${r.subject}|${r.topic}`;
+    map.set(k, [...(map.get(k) ?? []), r]);
+  });
+
+  const gaps: GapAnalysis[] = [];
+
+  for (const [k, rs] of map.entries()) {
+    const [subject, topic] = k.split("|") as [string, string];
+    const sorted = [...rs].sort((a, b) => a.date.localeCompare(b.date));
+    const pcts = sorted.map((r) => Math.round((r.score / r.max) * 100));
+    const pct = Math.round(pcts.reduce((a, b) => a + b, 0) / pcts.length);
+
+    if (pct >= 75) continue; // Strong — not a gap
+
+    const trend = pcts.length > 1 ? pcts[pcts.length - 1]! - pcts[0]! : 0;
+    const mistakes = [...new Set(rs.map((r) => r.mistakes).filter(Boolean))];
+    const status: "Weak" | "Revise" = pct < 60 ? "Weak" : "Revise";
+
+    const evidence: GapRecord[] = sorted.map((r) => ({
+      id: r.id,
+      date: r.date,
+      type: r.type,
+      score: r.score,
+      max: r.max,
+      attemptPct: Math.round((r.score / r.max) * 100),
+      mistakes: r.mistakes,
+    }));
+
+    gaps.push({ subject, topic, pct, attempts: rs.length, trend, mistakes, status, evidence });
+  }
+
+  // Sort weakest first so the highest-priority gap is at index 0
+  return gaps.sort((a, b) => a.pct - b.pct);
 }
 
 export function pickQuestions(subject: string, topic: string, difficulty: string, count: number): Question[] {

@@ -2,9 +2,6 @@
 //
 // Base URL is read from the VITE_API_URL env var (set in .env.local for dev).
 // Falls back to http://localhost:3001 so the app still works without a .env.local.
-//
-// All functions are typed to match the exact JSON shapes returned by the backend
-// (see backend/src/models/academics.model.ts and backend/src/models/student.model.ts).
 
 // ── Shared response types ────────────────────────────────────────────────────
 
@@ -35,6 +32,102 @@ export interface StudentsResponse {
   data: CampusStudent[];
 }
 
+// ── Academics types (mirror backend/src/models/academics.model.ts) ───────────
+
+export type RecordType = "Quiz" | "Exam" | "Assignment" | "Practice";
+
+export interface PerfRecord {
+  id: number;
+  subject: string;
+  topic: string;
+  score: number;
+  max: number;
+  date: string;
+  type: RecordType;
+  mistakes: string;
+}
+
+export type CreateRecordInput = Omit<PerfRecord, "id">;
+
+export interface Question {
+  id: string;
+  subject: string;
+  topic: string;
+  difficulty: "Easy" | "Medium" | "Hard";
+  q: string;
+  options: string[];
+  answer: number;
+  hint: string;
+  explanation: string;
+}
+
+export interface Resource {
+  id: number;
+  title: string;
+  description: string;
+  subject: string;
+  topic: string;
+  kind: "Video" | "Notes" | "Docs" | "Tutorial" | "Practice";
+  difficulty: "Easy" | "Medium" | "Hard";
+  minutes: number;
+  url: string;
+}
+
+export interface TopicStat {
+  subject: string;
+  topic: string;
+  pct: number;
+  attempts: number;
+  trend: number;
+  mistakes: string[];
+  status: "Weak" | "Revise" | "Strong";
+}
+
+export interface SubjectStat {
+  subject: string;
+  pct: number;
+  count: number;
+}
+
+/**
+ * One entry from GET /api/academics/gaps.
+ * Mirrors backend/src/models/academics.model.ts GapAnalysis exactly.
+ */
+export interface GapRecord {
+  id: number;
+  date: string;
+  type: RecordType;
+  score: number;
+  max: number;
+  /** Rounded percentage for this single attempt: round(score/max*100). */
+  attemptPct: number;
+  mistakes: string;
+}
+
+export interface GapAnalysis {
+  subject: string;
+  topic: string;
+  /** Average of per-attempt percentages, rounded. */
+  pct: number;
+  attempts: number;
+  /** Last attempt pct minus first attempt pct; positive = improving. */
+  trend: number;
+  mistakes: string[];
+  status: "Weak" | "Revise";
+  /** The individual records that produced this gap, sorted oldest-first. */
+  evidence: GapRecord[];
+}
+
+export interface GapsResponse {
+  data: GapAnalysis[];
+  meta: {
+    total: number;
+    weak: number;
+    revise: number;
+    calculation: string;
+  };
+}
+
 // ── Custom error class ───────────────────────────────────────────────────────
 
 export class ApiError extends Error {
@@ -57,8 +150,6 @@ const API_BASE_URL: string =
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
-
-  // Catch network failures (server down, DNS, CORS preflight blocked, etc.)
   try {
     response = await fetch(`${API_BASE_URL}${path}`, init);
   } catch (cause) {
@@ -69,7 +160,6 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     );
   }
 
-  // Non-2xx HTTP status
   if (!response.ok) {
     let detail = "";
     try {
@@ -84,7 +174,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     );
   }
 
-  // JSON parse failure on a successful response
+  if (response.status === 204) return undefined as T;
+
   try {
     return (await response.json()) as T;
   } catch (cause) {
@@ -92,27 +183,94 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
 }
 
-// ── Public API functions ─────────────────────────────────────────────────────
+// ── Health ───────────────────────────────────────────────────────────────────
 
-/** GET /health — confirms the backend is reachable. */
 export function checkBackend(): Promise<HealthResponse> {
   return request<HealthResponse>("/health");
 }
 
-/**
- * GET /api/academics/subjects
- * Returns the list of subjects and their topics.
- * Response shape: { data: string[], topicsBySubject: Record<string, string[]> }
- */
+// ── Subjects ─────────────────────────────────────────────────────────────────
+
 export function getSubjects(): Promise<SubjectsResponse> {
   return request<SubjectsResponse>("/api/academics/subjects");
 }
 
+// ── Performance records ───────────────────────────────────────────────────────
+
+export function getRecords(): Promise<{ data: PerfRecord[] }> {
+  return request<{ data: PerfRecord[] }>("/api/academics/records");
+}
+
+export function createRecord(body: CreateRecordInput): Promise<{ data: PerfRecord }> {
+  return request<{ data: PerfRecord }>("/api/academics/records", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export function deleteRecord(id: number): Promise<void> {
+  return request<void>(`/api/academics/records/${id}`, { method: "DELETE" });
+}
+
+// ── Stats ─────────────────────────────────────────────────────────────────────
+
+export function getTopicStats(): Promise<{ data: TopicStat[] }> {
+  return request<{ data: TopicStat[] }>("/api/academics/stats/topics");
+}
+
+export function getSubjectStats(): Promise<{ data: SubjectStat[] }> {
+  return request<{ data: SubjectStat[] }>("/api/academics/stats/subjects");
+}
+
+// ── Resources ────────────────────────────────────────────────────────────────
+
+export function getResources(params?: {
+  subject?: string;
+  topic?: string;
+}): Promise<{ data: Resource[] }> {
+  const qs = new URLSearchParams();
+  if (params?.subject) qs.set("subject", params.subject);
+  if (params?.topic) qs.set("topic", params.topic);
+  const query = qs.toString();
+  return request<{ data: Resource[] }>(`/api/academics/resources${query ? `?${query}` : ""}`);
+}
+
+// ── Gaps (learning-gap analysis) ─────────────────────────────────────────────
+
 /**
- * GET /api/students
- * Returns all campus students.
- * Response shape: { data: CampusStudent[] }
+ * GET /api/academics/gaps
+ * Returns topics below the Strong threshold (pct < 75) with full evidence.
+ * Optional filters: subject, status ("Weak" | "Revise")
  */
+export function getGaps(params?: {
+  subject?: string;
+  status?: "Weak" | "Revise";
+}): Promise<GapsResponse> {
+  const qs = new URLSearchParams();
+  if (params?.subject) qs.set("subject", params.subject);
+  if (params?.status) qs.set("status", params.status);
+  const query = qs.toString();
+  return request<GapsResponse>(`/api/academics/gaps${query ? `?${query}` : ""}`);
+}
+
+// ── Questions ────────────────────────────────────────────────────────────────
+
+export function getQuestions(params: {
+  subject: string;
+  topic?: string;
+  difficulty?: string;
+  count?: number;
+}): Promise<{ data: Question[] }> {
+  const qs = new URLSearchParams({ subject: params.subject });
+  if (params.topic) qs.set("topic", params.topic);
+  if (params.difficulty) qs.set("difficulty", params.difficulty);
+  if (params.count != null) qs.set("count", String(params.count));
+  return request<{ data: Question[] }>(`/api/academics/questions?${qs.toString()}`);
+}
+
+// ── Students ──────────────────────────────────────────────────────────────────
+
 export function getStudents(): Promise<StudentsResponse> {
   return request<StudentsResponse>("/api/students");
 }

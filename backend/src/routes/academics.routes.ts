@@ -8,6 +8,7 @@ import {
   listResources,
   listQuestions,
   listSubjects,
+  listGaps,
 } from "../controllers/academics.controller.js";
 
 const router = Router();
@@ -20,5 +21,6 @@ router.get("/stats/topics",   listTopicStats);
 router.get("/stats/subjects", listSubjectStats);
 router.get("/resources",      listResources);
 router.get("/questions",      listQuestions);
+router.get("/gaps",           listGaps);
 
 export default router;

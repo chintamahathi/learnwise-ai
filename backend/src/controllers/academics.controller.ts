@@ -7,6 +7,7 @@ import {
   resources,
   topicStats,
   subjectStats,
+  gapAnalysis,
   pickQuestions,
   subjects,
   topicsBySubject,
@@ -86,4 +87,37 @@ export function listQuestions(req: Request, res: Response) {
 // ── GET /api/academics/subjects ──────────────────────────────────────────────
 export function listSubjects(_req: Request, res: Response) {
   res.json({ data: subjects, topicsBySubject });
+}
+
+// ── GET /api/academics/gaps ───────────────────────────────────────────────────
+/**
+ * Returns topics below the Strong threshold (pct < 75) derived purely from
+ * stored performance records.  Each entry includes an `evidence` array of the
+ * individual attempts so the client can display the source data, not just the
+ * computed score.
+ *
+ * Optional query params:
+ *   subject  — filter to one subject
+ *   status   — "Weak" | "Revise" | "all" (default "all")
+ */
+export function listGaps(req: Request, res: Response) {
+  const { subject, status = "all" } = req.query as Record<string, string | undefined>;
+  let gaps = gapAnalysis(getRecords());
+  if (subject) gaps = gaps.filter((g) => g.subject === subject);
+  if (status === "Weak" || status === "Revise") gaps = gaps.filter((g) => g.status === status);
+  res.json({
+    data: gaps,
+    meta: {
+      total: gaps.length,
+      weak: gaps.filter((g) => g.status === "Weak").length,
+      revise: gaps.filter((g) => g.status === "Revise").length,
+      /**
+       * Calculation used:
+       * pct   = round( mean( score_i / max_i * 100 ) for each attempt )
+       * trend = last_attempt_pct − first_attempt_pct (chronological)
+       * Weak  = pct < 60, Revise = 60–74, Strong = 75+ (excluded here)
+       */
+      calculation: "mean_attempt_pct",
+    },
+  });
 }
