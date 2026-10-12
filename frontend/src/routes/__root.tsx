@@ -81,7 +81,11 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: "ElevateOS — Your personal growth workspace" },
-      { name: "description", content: "Your Goals. Your Growth. Your Next Move. A student workspace for learning, focus, and career growth." },
+      {
+        name: "description",
+        content:
+          "Your Goals. Your Growth. Your Next Move. A student workspace for learning, focus, and career growth.",
+      },
       { name: "author", content: "ElevateOS" },
       { property: "og:title", content: "ElevateOS — Your personal growth workspace" },
       { property: "og:description", content: "Your Goals. Your Growth. Your Next Move." },
@@ -94,7 +98,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         href: appCss,
       },
       { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
-      { rel: "stylesheet", href: "https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" },
+      {
+        rel: "stylesheet",
+        href: "https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap",
+      },
     ],
   }),
   shellComponent: RootShell,
@@ -123,7 +130,11 @@ function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
       {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-      <AppShell><AcademicsProvider><Outlet /></AcademicsProvider></AppShell>
+      <AppShell>
+        <AcademicsProvider>
+          <Outlet />
+        </AcademicsProvider>
+      </AppShell>
     </QueryClientProvider>
   );
 }
