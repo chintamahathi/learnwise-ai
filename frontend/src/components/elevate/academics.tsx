@@ -50,6 +50,9 @@ import {
   deleteRecord as apiDeleteRecord,
   getResources,
   getQuestions,
+  getPracticeSet,
+  submitAttempt as apiSubmitAttempt,
+  getAttempts,
   getTopicStats,
   getSubjectStats,
   getGaps,
@@ -59,6 +62,8 @@ import {
   type TopicStat,
   type Resource,
   type CreateRecordInput,
+  type AttemptHistory,
+  type PracticeSet,
 } from "@/api";
 import {
   parseCsv,
@@ -1018,11 +1023,17 @@ function Practice({ initial }: { initial: { subject: string; topic: string } | n
   const { addPlanTask } = useDemo();
   const { subjects, topicsBySubject } = useSubjectsLocal();
 
+  // ── Mode toggle: personalized vs manual ──────────────────────────────────
+  const [mode, setMode] = useState<"personalized" | "manual">(initial ? "manual" : "personalized");
+
+  // Manual controls
   const [subject, setSubject] = useState(initial?.subject ?? subjects[0] ?? "DSA");
   const [topic, setTopic] = useState(initial?.topic ?? "Any");
   const [difficulty, setDifficulty] = useState("Mixed");
   const [count, setCount] = useState(3);
 
+  // Practice session state
+  const [practiceSet, setPracticeSet] = useState<PracticeSet | null>(null);
   const [qs, setQs] = useState<Question[] | null>(null);
   const [answers, setAnswers] = useState<Record<string, number>>({});
   const [hints, setHints] = useState<string[]>([]);
@@ -1030,15 +1041,36 @@ function Practice({ initial }: { initial: { subject: string; topic: string } | n
   const [generating, setGenerating] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
+  // Attempt history from backend
+  const [attemptHistory, setAttemptHistory] = useState<AttemptHistory[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
+
+  // Load attempt history on mount
+  useEffect(() => {
+    getAttempts()
+      .then((r) => {
+        setAttemptHistory(r.data);
+        setHistoryLoading(false);
+      })
+      .catch(() => setHistoryLoading(false));
+  }, []);
+
   const generate = async () => {
     setGenerating(true);
     try {
-      const res = await getQuestions({ subject, topic, difficulty, count });
-      if (!res.data.length) {
-        toast.error("No questions for this topic yet");
+      let res: { data: PracticeSet };
+      if (mode === "personalized") {
+        res = await getPracticeSet({ mode: "personalized", count });
+      } else {
+        res = await getPracticeSet({ mode: "manual", subject, topic, difficulty, count });
+      }
+
+      if (!res.data.questions.length) {
+        toast.error("No questions available for this topic yet");
         return;
       }
-      setQs(res.data);
+      setPracticeSet(res.data);
+      setQs(res.data.questions);
       setAnswers({});
       setHints([]);
       setDone(false);
@@ -1053,40 +1085,78 @@ function Practice({ initial }: { initial: { subject: string; topic: string } | n
   const score = qs ? qs.filter((q) => answers[q.id] === q.answer).length : 0;
 
   const submit = async () => {
-    if (!qs) return;
+    if (!qs || !practiceSet) return;
     setSubmitting(true);
     setDone(true);
 
     const today = new Date().toISOString().slice(0, 10);
-    const byTopic = new Map<string, { s: number; t: number; subject: string }>();
+
+    // Aggregate answers by topic
+    const byTopic = new Map<
+      string,
+      { s: number; t: number; subject: string; mistakes: string[] }
+    >();
     qs.forEach((q) => {
       const k = q.topic;
-      const v = byTopic.get(k) ?? { s: 0, t: 0, subject: q.subject };
+      const v = byTopic.get(k) ?? { s: 0, t: 0, subject: q.subject, mistakes: [] };
       v.t++;
-      if (answers[q.id] === q.answer) v.s++;
+      if (answers[q.id] === q.answer) {
+        v.s++;
+      } else {
+        v.mistakes.push(q.q.slice(0, 60));
+      }
       byTopic.set(k, v);
     });
 
+    const results = [...byTopic.entries()].map(([t, v]) => ({
+      subject: v.subject,
+      topic: t,
+      score: v.s,
+      total: v.t,
+      mistakes: v.mistakes.length ? v.mistakes[0]! : "",
+    }));
+
     try {
-      for (const [t, v] of byTopic.entries()) {
-        await addRecord({
-          subject: v.subject,
-          topic: t,
-          score: v.s,
-          max: v.t,
-          date: today,
-          type: "Practice",
-          mistakes: v.s < v.t ? "Practice errors" : "",
-        });
-      }
+      // Use the dedicated attempts endpoint — persists to backend and returns summary
+      const att = await apiSubmitAttempt({ results, date: today });
+
+      // Also add a legacy context attempt for ProgressView compatibility
       addAttempt({
         id: Date.now(),
-        subject,
-        topic,
-        score: qs.filter((q) => answers[q.id] === q.answer).length,
-        total: qs.length,
+        subject: practiceSet.subject,
+        topic: practiceSet.topic,
+        score: results.reduce((a, r) => a + r.score, 0),
+        total: results.reduce((a, r) => a + r.total, 0),
         date: today,
       });
+
+      // Refresh attempt history panel
+      setAttemptHistory((prev) => [
+        {
+          sessionId: att.data.sessionId,
+          subject: att.data.subject,
+          topic: att.data.topic,
+          score: att.data.score,
+          total: att.data.total,
+          date: att.data.date,
+          pct: Math.round((att.data.score / att.data.total) * 100),
+        },
+        ...prev,
+      ]);
+
+      // Trigger records refresh so gaps + stats update
+      for (const r of results) {
+        await addRecord({
+          subject: r.subject,
+          topic: r.topic,
+          score: r.score,
+          max: r.total,
+          date: today,
+          type: "Practice",
+          mistakes: r.mistakes ?? "",
+        });
+      }
+
       toast.success("Practice saved — gaps and recommendations updated");
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : "Failed to save practice result.";
@@ -1100,76 +1170,153 @@ function Practice({ initial }: { initial: { subject: string; topic: string } | n
 
   return (
     <div className="lab-grid">
+      {/* ── Left panel: configuration ─────────────────────────────────── */}
       <section className="panel p-5">
         <h3 className="lab-title">
           <Target size={16} />
           Build a practice set
         </h3>
-        <div className="form-stack">
-          <label>
-            Subject
-            <select
-              value={subject}
-              onChange={(e) => {
-                setSubject(e.target.value);
-                setTopic("Any");
-              }}
-            >
-              {subjects.map((s) => (
-                <option key={s}>{s}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Topic
-            <select value={topic} onChange={(e) => setTopic(e.target.value)}>
-              <option>Any</option>
-              {(topicsBySubject[subject] ?? []).map((t) => (
-                <option key={t}>{t}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Difficulty
-            <select value={difficulty} onChange={(e) => setDifficulty(e.target.value)}>
-              {["Mixed", "Easy", "Medium", "Hard"].map((d) => (
-                <option key={d}>{d}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Number of questions: {count}
-            <input
-              type="range"
-              min={1}
-              max={5}
-              value={count}
-              onChange={(e) => setCount(Number(e.target.value))}
-            />
-          </label>
-          <Button onClick={generate} disabled={generating}>
-            {generating ? <Loader2 className="animate-spin" size={14} /> : <Play />}
-            Generate questions
+
+        {/* Mode toggle */}
+        <div className="flex gap-2 mb-4">
+          <Button
+            size="sm"
+            variant={mode === "personalized" ? "default" : "outline"}
+            onClick={() => setMode("personalized")}
+          >
+            Personalized
           </Button>
-          {weakest && (
-            <Button
-              variant="outline"
-              onClick={() => {
-                setSubject(weakest.subject);
-                setTopic(weakest.topic);
-              }}
-            >
-              Use my weakest topic: {weakest.topic}
-            </Button>
-          )}
+          <Button
+            size="sm"
+            variant={mode === "manual" ? "default" : "outline"}
+            onClick={() => setMode("manual")}
+          >
+            Manual
+          </Button>
         </div>
+
+        {mode === "personalized" ? (
+          <div className="form-stack">
+            <p className="text-xs text-muted-foreground">
+              The backend picks your weakest gap topic and adjusts difficulty to your accuracy — no
+              manual selection needed.
+            </p>
+            <label>
+              Number of questions: {count}
+              <input
+                type="range"
+                min={1}
+                max={5}
+                value={count}
+                onChange={(e) => setCount(Number(e.target.value))}
+              />
+            </label>
+            <Button onClick={generate} disabled={generating}>
+              {generating ? <Loader2 className="animate-spin" size={14} /> : <Play />}
+              Start personalized session
+            </Button>
+            {weakest && (
+              <p className="text-xs text-muted-foreground">
+                Current weakest topic: <strong>{weakest.topic}</strong> ({weakest.pct}%)
+              </p>
+            )}
+          </div>
+        ) : (
+          <div className="form-stack">
+            <label>
+              Subject
+              <select
+                value={subject}
+                onChange={(e) => {
+                  setSubject(e.target.value);
+                  setTopic("Any");
+                }}
+              >
+                {subjects.map((s) => (
+                  <option key={s}>{s}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Topic
+              <select value={topic} onChange={(e) => setTopic(e.target.value)}>
+                <option>Any</option>
+                {(topicsBySubject[subject] ?? []).map((t) => (
+                  <option key={t}>{t}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Difficulty
+              <select value={difficulty} onChange={(e) => setDifficulty(e.target.value)}>
+                {["Mixed", "Easy", "Medium", "Hard"].map((d) => (
+                  <option key={d}>{d}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Number of questions: {count}
+              <input
+                type="range"
+                min={1}
+                max={5}
+                value={count}
+                onChange={(e) => setCount(Number(e.target.value))}
+              />
+            </label>
+            <Button onClick={generate} disabled={generating}>
+              {generating ? <Loader2 className="animate-spin" size={14} /> : <Play />}
+              Generate questions
+            </Button>
+            {weakest && (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setMode("manual");
+                  setSubject(weakest.subject);
+                  setTopic(weakest.topic);
+                }}
+              >
+                Use my weakest topic: {weakest.topic}
+              </Button>
+            )}
+          </div>
+        )}
+
+        {/* Attempt history from backend */}
+        {!historyLoading && attemptHistory.length > 0 && (
+          <div className="mt-5">
+            <h4 className="text-xs text-muted-foreground mb-2">Recent sessions</h4>
+            <div className="flex flex-col gap-1">
+              {attemptHistory.slice(0, 5).map((a) => (
+                <div key={a.sessionId} className="flex items-center justify-between text-xs">
+                  <span className="text-muted-foreground">
+                    {a.date} · {a.topic}
+                  </span>
+                  <Tag color={a.pct < 60 ? "amber" : a.pct < 75 ? "cyan" : "emerald"}>
+                    {a.score}/{a.total} · {a.pct}%
+                  </Tag>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </section>
 
+      {/* ── Right panel: questions + result ──────────────────────────────── */}
       <section className="panel p-5">
+        {/* Personalized reason banner */}
+        {practiceSet?.mode === "personalized" && practiceSet.reason && !done && (
+          <div className="mb-4 p-3 rounded-lg bg-muted text-xs text-muted-foreground">
+            <strong>Why this set:</strong> {practiceSet.reason.rationale}
+          </div>
+        )}
+
         {!qs ? (
           <p className="empty-state">
-            Choose your settings and generate a practice set. Questions come from the backend
-            question bank.
+            {mode === "personalized"
+              ? 'Click "Start personalized session" — the backend selects your highest-priority gap topic.'
+              : "Choose your settings and generate a practice set. Questions come from the backend question bank."}
           </p>
         ) : (
           <div className="form-stack">
@@ -1221,6 +1368,7 @@ function Practice({ initial }: { initial: { subject: string; topic: string } | n
                 {done && <p className="hint">{q.explanation}</p>}
               </div>
             ))}
+
             {!done ? (
               <Button
                 disabled={Object.keys(answers).length < qs.length || submitting}
@@ -1243,6 +1391,11 @@ function Practice({ initial }: { initial: { subject: string; topic: string } | n
                   <Button size="sm" onClick={generate}>
                     Try another set
                   </Button>
+                  {mode === "personalized" && (
+                    <Button size="sm" variant="outline" onClick={generate}>
+                      Next gap topic
+                    </Button>
+                  )}
                   <Button
                     size="sm"
                     variant="outline"

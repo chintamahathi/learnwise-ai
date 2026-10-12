@@ -10,6 +10,9 @@ import {
   listSubjects,
   listGaps,
   listRecommendations,
+  getPracticeSet,
+  submitAttempt,
+  listAttempts,
 } from "../controllers/academics.controller.js";
 
 const router = Router();
@@ -24,5 +27,8 @@ router.get("/resources",        listResources);
 router.get("/questions",        listQuestions);
 router.get("/gaps",             listGaps);
 router.get("/recommendations",  listRecommendations);
+router.get("/practice-set",     getPracticeSet);
+router.post("/attempts",        submitAttempt);
+router.get("/attempts",         listAttempts);
 
 export default router;

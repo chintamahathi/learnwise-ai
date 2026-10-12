@@ -118,3 +118,65 @@ export interface RecommendedResource extends Resource {
   /** Accuracy percentage of the matched topic. */
   matchedPct: number;
 }
+
+/**
+ * A personalized practice set returned by GET /api/academics/practice-set.
+ *
+ * When mode=personalized the backend uses the student's actual gap topics
+ * (from gapAnalysis) to choose subject, topic and difficulty automatically.
+ * The selection logic is fully deterministic — no AI is involved.
+ */
+export interface PracticeSet {
+  questions: Question[];
+  /** Subject the questions are drawn from. */
+  subject: string;
+  /** Topic the questions are drawn from ("Any" means mixed). */
+  topic: string;
+  /** Difficulty tier applied. */
+  difficulty: "Easy" | "Medium" | "Hard" | "Mixed";
+  /**
+   * "personalized" — derived from the student's actual gap topics.
+   * "manual"       — caller supplied subject/topic/difficulty explicitly.
+   */
+  mode: "personalized" | "manual";
+  /**
+   * Only present when mode = "personalized".
+   * Explains which gap triggered the selection and why.
+   */
+  reason?: {
+    gapPct: number;
+    gapStatus: "Weak" | "Revise";
+    difficultyChosen: string;
+    rationale: string;
+  };
+}
+
+/**
+ * A single practice session stored via POST /api/academics/attempts.
+ * The backend saves each topic result as a PerfRecord and returns a summary.
+ */
+export interface AttemptSummary {
+  /** Session identifier (date + topic slug). */
+  sessionId: string;
+  subject: string;
+  topic: string;
+  score: number;
+  total: number;
+  date: string;
+  /** IDs of the PerfRecords created for this attempt. */
+  recordIds: number[];
+}
+
+/**
+ * A practice session history entry derived from stored PerfRecords.
+ * Returned by GET /api/academics/attempts.
+ */
+export interface AttemptHistory {
+  sessionId: string;
+  subject: string;
+  topic: string;
+  score: number;
+  total: number;
+  date: string;
+  pct: number;
+}

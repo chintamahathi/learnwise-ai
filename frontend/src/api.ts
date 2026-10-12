@@ -327,6 +327,108 @@ export function getQuestions(params: {
   return request<{ data: Question[] }>(`/api/academics/questions?${qs.toString()}`);
 }
 
+// ── Practice (personalized + attempt tracking) ────────────────────────────────
+
+/**
+ * Explanation attached to a personalized practice set.
+ * Every field is derived from real gap data — no AI output.
+ */
+export interface PracticeReason {
+  gapPct: number;
+  gapStatus: "Weak" | "Revise";
+  difficultyChosen: string;
+  rationale: string;
+}
+
+/** Response shape for GET /api/academics/practice-set */
+export interface PracticeSet {
+  questions: Question[];
+  subject: string;
+  topic: string;
+  difficulty: "Easy" | "Medium" | "Hard" | "Mixed";
+  mode: "personalized" | "manual";
+  reason?: PracticeReason;
+}
+
+/** One result entry inside POST /api/academics/attempts body */
+export interface AttemptResult {
+  subject: string;
+  topic: string;
+  score: number;
+  total: number;
+  mistakes?: string;
+}
+
+/** Response from POST /api/academics/attempts */
+export interface AttemptSummary {
+  sessionId: string;
+  subject: string;
+  topic: string;
+  score: number;
+  total: number;
+  date: string;
+  recordIds: number[];
+}
+
+/** One row from GET /api/academics/attempts */
+export interface AttemptHistory {
+  sessionId: string;
+  subject: string;
+  topic: string;
+  score: number;
+  total: number;
+  date: string;
+  pct: number;
+}
+
+/**
+ * GET /api/academics/practice-set
+ *
+ * mode=personalized (default): auto-selects the weakest gap topic + difficulty.
+ * mode=manual: requires subject; behaves like /questions.
+ */
+export function getPracticeSet(params?: {
+  mode?: "personalized" | "manual";
+  subject?: string;
+  topic?: string;
+  difficulty?: string;
+  count?: number;
+  status?: "Weak" | "Revise";
+}): Promise<{ data: PracticeSet }> {
+  const qs = new URLSearchParams();
+  if (params?.mode) qs.set("mode", params.mode);
+  if (params?.subject) qs.set("subject", params.subject);
+  if (params?.topic) qs.set("topic", params.topic);
+  if (params?.difficulty) qs.set("difficulty", params.difficulty);
+  if (params?.count != null) qs.set("count", String(params.count));
+  if (params?.status) qs.set("status", params.status);
+  const query = qs.toString();
+  return request<{ data: PracticeSet }>(`/api/academics/practice-set${query ? `?${query}` : ""}`);
+}
+
+/**
+ * POST /api/academics/attempts
+ * Persists a completed practice session. Returns a summary with created record IDs.
+ */
+export function submitAttempt(body: {
+  results: AttemptResult[];
+  date?: string;
+}): Promise<{ data: AttemptSummary }> {
+  return request<{ data: AttemptSummary }>("/api/academics/attempts", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+/**
+ * GET /api/academics/attempts
+ * Returns practice-session history derived from stored records (type=Practice).
+ */
+export function getAttempts(): Promise<{ data: AttemptHistory[]; meta: { total: number } }> {
+  return request<{ data: AttemptHistory[]; meta: { total: number } }>("/api/academics/attempts");
+}
+
 // ── Students ──────────────────────────────────────────────────────────────────
 
 export function getStudents(): Promise<StudentsResponse> {

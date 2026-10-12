@@ -3,6 +3,8 @@ import {
   topicStats,
   subjectStats,
   gapAnalysis,
+  buildPersonalizedSet,
+  getAttemptHistory,
   pickQuestions,
   subjects,
 } from "../src/services/academics.data.js";
@@ -174,5 +176,141 @@ describe("pickQuestions", () => {
   it("returns an empty array for an unknown subject", () => {
     const qs = pickQuestions("Unknown", "Any", "Mixed", 5);
     expect(qs).toHaveLength(0);
+  });
+});
+
+// ── buildPersonalizedSet ─────────────────────────────────────────────────────
+
+// Records where Subnetting is weakest (40%) and Dynamic Programming is next (44%)
+const practiceRecords: PerfRecord[] = [
+  { id: 1,  subject: "Computer Networks", topic: "Subnetting",          score: 8,  max: 20, date: "2026-09-26", type: "Quiz",     mistakes: "CIDR block sizes" },
+  { id: 2,  subject: "DSA",               topic: "Dynamic Programming", score: 11, max: 25, date: "2026-09-12", type: "Exam",     mistakes: "Choosing the state" },
+  { id: 3,  subject: "DSA",               topic: "Arrays",              score: 17, max: 20, date: "2026-09-02", type: "Quiz",     mistakes: "" }, // Strong
+  { id: 4,  subject: "DSA",               topic: "Linked Lists",        score: 9,  max: 20, date: "2026-09-05", type: "Quiz",     mistakes: "Pointer updates" },
+  { id: 5,  subject: "DSA",               topic: "Linked Lists",        score: 12, max: 20, date: "2026-10-03", type: "Practice", mistakes: "Pointer updates" },
+];
+
+describe("buildPersonalizedSet", () => {
+  it("returns mode=personalized", () => {
+    const set = buildPersonalizedSet(practiceRecords);
+    expect(set.mode).toBe("personalized");
+  });
+
+  it("targets the weakest gap topic that has questions in the bank", () => {
+    const set = buildPersonalizedSet(practiceRecords);
+    // Subnetting (40%) is weakest and has questions in the bank
+    expect(set.subject).toBe("Computer Networks");
+    expect(set.topic).toBe("Subnetting");
+  });
+
+  it("chooses Easy difficulty for pct < 50", () => {
+    const set = buildPersonalizedSet(practiceRecords);
+    // Subnetting 40% → Easy
+    expect(set.difficulty).toBe("Easy");
+  });
+
+  it("chooses Mixed difficulty for pct 50–59", () => {
+    // Linked Lists avg (9/20=45%, 12/20=60%) = 53% → Mixed
+    const onlyLL: PerfRecord[] = [
+      { id: 1, subject: "DSA", topic: "Linked Lists", score: 9,  max: 20, date: "2026-09-05", type: "Quiz",     mistakes: "Pointer updates" },
+      { id: 2, subject: "DSA", topic: "Linked Lists", score: 12, max: 20, date: "2026-10-03", type: "Practice", mistakes: "Pointer updates" },
+    ];
+    const set = buildPersonalizedSet(onlyLL);
+    expect(set.difficulty).toBe("Mixed");
+    expect(set.topic).toBe("Linked Lists");
+  });
+
+  it("chooses Medium difficulty for pct 60–74 (Revise)", () => {
+    const reviseRec: PerfRecord[] = [
+      { id: 1, subject: "Operating Systems", topic: "Process Scheduling", score: 12, max: 20, date: "2026-09-08", type: "Quiz", mistakes: "Round robin" },
+    ];
+    const set = buildPersonalizedSet(reviseRec);
+    expect(set.difficulty).toBe("Medium");
+  });
+
+  it("attaches a reason with rationale string", () => {
+    const set = buildPersonalizedSet(practiceRecords);
+    expect(set.reason?.rationale).toBeTruthy();
+    expect(set.reason?.gapPct).toBe(40);
+    expect(set.reason?.gapStatus).toBe("Weak");
+  });
+
+  it("returns empty questions and reason when no gap topics have records", () => {
+    // All strong
+    const strong: PerfRecord[] = [
+      { id: 1, subject: "DSA", topic: "Arrays", score: 20, max: 20, date: "2026-09-01", type: "Quiz", mistakes: "" },
+    ];
+    const set = buildPersonalizedSet(strong);
+    expect(set.questions).toHaveLength(0);
+    expect(set.reason?.rationale).toMatch(/No gap topics/);
+  });
+
+  it("respects the count option", () => {
+    const set = buildPersonalizedSet(practiceRecords, { count: 2 });
+    expect(set.questions.length).toBeLessThanOrEqual(2);
+  });
+
+  it("respects the statusFilter option — Weak only", () => {
+    // Force the set to only use Weak topics; Revise topics should be ignored
+    const set = buildPersonalizedSet(practiceRecords, { statusFilter: "Weak" });
+    // Subnetting (Weak 40%) should still be chosen
+    expect(set.topic).toBe("Subnetting");
+  });
+});
+
+// ── getAttemptHistory ─────────────────────────────────────────────────────────
+
+const historyRecords: PerfRecord[] = [
+  { id: 1, subject: "DSA", topic: "Linked Lists", score: 9,  max: 20, date: "2026-09-05", type: "Practice", mistakes: "" },
+  { id: 2, subject: "DSA", topic: "Linked Lists", score: 12, max: 20, date: "2026-10-03", type: "Practice", mistakes: "" },
+  { id: 3, subject: "DSA", topic: "Arrays",       score: 17, max: 20, date: "2026-09-02", type: "Quiz",     mistakes: "" }, // not Practice
+  // Two records for same session (same date + subject + topic)
+  { id: 4, subject: "DBMS", topic: "SQL Joins",   score: 5,  max: 10, date: "2026-10-05", type: "Practice", mistakes: "" },
+  { id: 5, subject: "DBMS", topic: "SQL Joins",   score: 3,  max: 10, date: "2026-10-05", type: "Practice", mistakes: "" },
+];
+
+describe("getAttemptHistory", () => {
+  it("excludes non-Practice records", () => {
+    const history = getAttemptHistory(historyRecords);
+    history.forEach((h) => {
+      expect(h.topic).not.toBe("Arrays");
+    });
+  });
+
+  it("groups same-date+topic records into one session", () => {
+    const history = getAttemptHistory(historyRecords);
+    const sqlSessions = history.filter((h) => h.topic === "SQL Joins");
+    expect(sqlSessions).toHaveLength(1);
+    // Combined score: 5+3=8, total: 10+10=20
+    expect(sqlSessions[0]?.score).toBe(8);
+    expect(sqlSessions[0]?.total).toBe(20);
+    expect(sqlSessions[0]?.pct).toBe(40);
+  });
+
+  it("sorts newest-first", () => {
+    const history = getAttemptHistory(historyRecords);
+    for (let i = 1; i < history.length; i++) {
+      expect(history[i]!.date <= history[i - 1]!.date).toBe(true);
+    }
+  });
+
+  it("generates a deterministic sessionId", () => {
+    const history = getAttemptHistory(historyRecords);
+    const ll = history.find((h) => h.topic === "Linked Lists" && h.date === "2026-10-03");
+    expect(ll?.sessionId).toBe("2026-10-03-DSA-Linked_Lists");
+  });
+
+  it("computes pct correctly", () => {
+    const history = getAttemptHistory(historyRecords);
+    const ll1 = history.find((h) => h.topic === "Linked Lists" && h.date === "2026-09-05");
+    // 9/20 = 45%
+    expect(ll1?.pct).toBe(45);
+  });
+
+  it("returns empty array for no Practice records", () => {
+    const quizOnly: PerfRecord[] = [
+      { id: 1, subject: "DSA", topic: "Arrays", score: 17, max: 20, date: "2026-09-02", type: "Quiz", mistakes: "" },
+    ];
+    expect(getAttemptHistory(quizOnly)).toHaveLength(0);
   });
 });

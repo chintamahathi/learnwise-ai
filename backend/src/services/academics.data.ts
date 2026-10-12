@@ -1,7 +1,7 @@
 // Seed data matching the frontend's src/data/academics.ts exactly.
 // Replace with database queries when a DB is connected.
 
-import type { PerfRecord, Resource, Question, TopicStat, SubjectStat, GapAnalysis, GapRecord, RecommendedResource } from "../models/academics.model.js";
+import type { PerfRecord, Resource, Question, TopicStat, SubjectStat, GapAnalysis, GapRecord, RecommendedResource, PracticeSet, AttemptHistory } from "../models/academics.model.js";
 
 export const subjects = ["DSA", "Operating Systems", "DBMS", "Computer Networks"] as const;
 
@@ -232,4 +232,132 @@ export function pickQuestions(subject: string, topic: string, difficulty: string
   const exact = pool.filter((x) => difficulty === "Mixed" || x.difficulty === difficulty);
   pool = [...exact, ...pool.filter((x) => !exact.includes(x))];
   return pool.slice(0, count);
+}
+
+// ── Practice set helpers ──────────────────────────────────────────────────────
+
+/**
+ * Selects the best difficulty tier for a gap topic based on the student's
+ * average accuracy.  Completely deterministic — no AI.
+ *
+ * Rationale:
+ *   pct < 50  → start Easy: build confidence before tackling harder material.
+ *   pct 50–59 → Easy/Medium mix (Mixed): still fragile, avoid overloading.
+ *   pct 60–74 → Medium: topic is Revise-level, medium challenge is appropriate.
+ */
+function difficultyForGap(pct: number): "Easy" | "Mixed" | "Medium" {
+  if (pct < 50) return "Easy";
+  if (pct < 60) return "Mixed";
+  return "Medium";
+}
+
+/**
+ * Builds a personalized practice set from the student's actual gap topics.
+ *
+ * Selection algorithm (deterministic, no AI):
+ *   1. Compute gap topics via gapAnalysis(), weakest-first.
+ *   2. Filter by statusFilter.
+ *   3. For each gap topic in order, check if the question bank has ≥1 question.
+ *   4. The first gap topic with questions becomes the target.
+ *   5. Choose difficulty based on the gap's pct (difficultyForGap).
+ *   6. Return up to `count` questions for that topic.
+ *   7. If no gap topics have questions, fall back to the first gap topic at
+ *      Mixed difficulty (questions may be empty — caller should surface this).
+ */
+export function buildPersonalizedSet(
+  recs: PerfRecord[],
+  opts: { count?: number; statusFilter?: "Weak" | "Revise" | "all" } = {},
+): import("../models/academics.model.js").PracticeSet {
+  const { count = 5, statusFilter = "all" } = opts;
+
+  let gaps = gapAnalysis(recs);
+  if (statusFilter !== "all") gaps = gaps.filter((g) => g.status === statusFilter);
+
+  if (!gaps.length) {
+    // Fallback: no gaps — return empty set so the frontend can inform the user.
+    return {
+      questions: [],
+      subject: "",
+      topic: "Any",
+      difficulty: "Mixed",
+      mode: "personalized",
+      reason: {
+        gapPct: 0,
+        gapStatus: "Weak",
+        difficultyChosen: "Mixed",
+        rationale: "No gap topics found — all attempted topics are Strong.",
+      },
+    };
+  }
+
+  // Find first gap that has questions in the bank.
+  let chosen = gaps[0]!;
+  for (const g of gaps) {
+    const available = questionBank.filter(
+      (q) => q.subject === g.subject && q.topic === g.topic,
+    );
+    if (available.length > 0) {
+      chosen = g;
+      break;
+    }
+  }
+
+  const difficulty = difficultyForGap(chosen.pct);
+  const questions = pickQuestions(chosen.subject, chosen.topic, difficulty, count);
+
+  const rationale =
+    chosen.pct < 50
+      ? `${chosen.pct}% accuracy — starting with Easy questions to rebuild confidence.`
+      : chosen.pct < 60
+        ? `${chosen.pct}% accuracy — Mixed difficulty to consolidate fragile knowledge.`
+        : `${chosen.pct}% accuracy — Medium questions to move from Revise to Strong.`;
+
+  return {
+    questions,
+    subject: chosen.subject,
+    topic: chosen.topic,
+    difficulty: difficulty === "Mixed" ? "Mixed" : difficulty,
+    mode: "personalized",
+    reason: {
+      gapPct: chosen.pct,
+      gapStatus: chosen.status,
+      difficultyChosen: difficulty,
+      rationale,
+    },
+  };
+}
+
+/**
+ * Derives practice-session history from stored PerfRecords (type=Practice).
+ * Groups records with the same subject+topic+date into one session entry.
+ * No separate attempt store is needed — the records table already has everything.
+ */
+export function getAttemptHistory(recs: PerfRecord[]): import("../models/academics.model.js").AttemptHistory[] {
+  const practiceRecs = recs.filter((r) => r.type === "Practice");
+
+  // Group by date + subject + topic
+  const map = new Map<string, PerfRecord[]>();
+  for (const r of practiceRecs) {
+    const k = `${r.date}|${r.subject}|${r.topic}`;
+    map.set(k, [...(map.get(k) ?? []), r]);
+  }
+
+  const result: import("../models/academics.model.js").AttemptHistory[] = [];
+  for (const [k, rs] of map.entries()) {
+    const [date, subject, topic] = k.split("|") as [string, string, string];
+    const score = rs.reduce((a, r) => a + r.score, 0);
+    const total = rs.reduce((a, r) => a + r.max, 0);
+    const pct = total > 0 ? Math.round((score / total) * 100) : 0;
+    result.push({
+      sessionId: `${date}-${subject.replace(/\s+/g, "_")}-${topic.replace(/\s+/g, "_")}`,
+      subject,
+      topic,
+      score,
+      total,
+      date,
+      pct,
+    });
+  }
+
+  return result.sort((a, b) => b.date.localeCompare(a.date));
 }

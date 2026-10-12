@@ -10,6 +10,8 @@ import {
   gapAnalysis,
   recommendations,
   pickQuestions,
+  buildPersonalizedSet,
+  getAttemptHistory,
   subjects,
   topicsBySubject,
 } from "../services/academics.data.js";
@@ -154,4 +156,145 @@ export function listRecommendations(req: Request, res: Response) {
         "topic_match_weakest_first_difficulty_asc — resources matched to gap topics from the verified catalogue only",
     },
   });
+}
+
+// ── GET /api/academics/practice-set ──────────────────────────────────────────
+/**
+ * Returns a set of questions tailored to the student's performance.
+ *
+ * mode=personalized (default):
+ *   Picks the weakest gap topic that has questions in the bank.
+ *   Chooses difficulty deterministically from the gap's accuracy:
+ *     pct < 50  → Easy   (rebuild confidence)
+ *     pct 50–59 → Mixed  (consolidate fragile knowledge)
+ *     pct 60–74 → Medium (push toward Strong)
+ *   No AI is used — every decision is rule-based and auditable.
+ *
+ * mode=manual:
+ *   Behaves exactly like GET /api/academics/questions.
+ *   Required params: subject
+ *   Optional params: topic (default "Any"), difficulty (default "Mixed"), count (default 5)
+ *
+ * Optional for both modes:
+ *   count    — number of questions (1–20, default 5)
+ *   status   — "Weak" | "Revise" | "all" (default "all") — only for personalized
+ */
+export function getPracticeSet(req: Request, res: Response) {
+  const {
+    mode = "personalized",
+    subject,
+    topic = "Any",
+    difficulty = "Mixed",
+    count: countStr = "5",
+    status,
+  } = req.query as Record<string, string | undefined>;
+
+  const count = Math.min(Math.max(Number(countStr) || 5, 1), 20);
+
+  if (mode === "manual") {
+    if (!subject) {
+      res.status(400).json({ error: "subject is required when mode=manual" });
+      return;
+    }
+    const questions = pickQuestions(subject, topic, difficulty, count);
+    res.json({
+      data: {
+        questions,
+        subject,
+        topic,
+        difficulty,
+        mode: "manual",
+      },
+    });
+    return;
+  }
+
+  // Personalized mode
+  const statusFilter =
+    status === "Weak" || status === "Revise" ? (status as "Weak" | "Revise") : "all";
+  const set = buildPersonalizedSet(getRecords(), { count, statusFilter });
+  res.json({ data: set });
+}
+
+// ── POST /api/academics/attempts ─────────────────────────────────────────────
+/**
+ * Persists a completed practice session as a batch of PerfRecords.
+ *
+ * Body shape:
+ *   {
+ *     results: [
+ *       { subject, topic, score, total, mistakes? }  // one per topic in the set
+ *     ],
+ *     date?: "YYYY-MM-DD"   // defaults to today
+ *   }
+ *
+ * The backend saves one PerfRecord per result entry (type="Practice") and
+ * returns the created records plus a session summary.  No separate attempt
+ * table is needed — history is derived from the records table.
+ */
+const attemptResultSchema = z.object({
+  subject:  z.string().min(1),
+  topic:    z.string().min(1),
+  score:    z.number().int().nonnegative(),
+  total:    z.number().int().positive(),
+  mistakes: z.string().default(""),
+});
+
+const submitAttemptSchema = z.object({
+  results: z.array(attemptResultSchema).min(1).max(20),
+  date:    z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+});
+
+export function submitAttempt(req: Request, res: Response) {
+  const parsed = submitAttemptSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Validation failed", details: parsed.error.flatten() });
+    return;
+  }
+
+  const { results, date = new Date().toISOString().slice(0, 10) } = parsed.data;
+  const createdIds: number[] = [];
+
+  for (const r of results) {
+    const rec = addRecord({
+      subject:  r.subject,
+      topic:    r.topic,
+      score:    r.score,
+      max:      r.total,
+      date,
+      type:     "Practice",
+      mistakes: r.mistakes ?? "",
+    });
+    createdIds.push(rec.id);
+  }
+
+  const totalScore = results.reduce((a, r) => a + r.score, 0);
+  const totalMax   = results.reduce((a, r) => a + r.total, 0);
+  const subject    = results[0]!.subject;
+  const topic      = results.length === 1 ? results[0]!.topic : "Mixed";
+
+  res.status(201).json({
+    data: {
+      sessionId:  `${date}-${subject.replace(/\s+/g, "_")}-${topic.replace(/\s+/g, "_")}`,
+      subject,
+      topic,
+      score:      totalScore,
+      total:      totalMax,
+      date,
+      recordIds:  createdIds,
+    },
+  });
+}
+
+// ── GET /api/academics/attempts ───────────────────────────────────────────────
+/**
+ * Returns the student's practice-session history, derived from stored
+ * PerfRecords with type="Practice".
+ *
+ * Groups records by date + subject + topic so each session appears once.
+ * Sorted newest-first.  No separate attempt store needed.
+ */
+export function listAttempts(_req: Request, res: Response) {
+  const history = getAttemptHistory(getRecords());
+  res.json({ data: history, meta: { total: history.length } });
 }
